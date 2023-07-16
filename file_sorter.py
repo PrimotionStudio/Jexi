@@ -108,6 +108,7 @@ def create_gui():
     root = tk.Tk()
     root.geometry("600x400")
     root.title("Jexi")
+    root.resizable(False, False)  # Make the window unresizable
 
     # Create menubar
     menubar = tk.Menu(root)
@@ -152,6 +153,11 @@ def create_gui():
     separator = tk.Frame(root, width=1, bg="gray")
     separator.pack(side="left", fill="y")
 
+    # Create header in the main area
+    header_label = tk.Label(root, text="Last Moved",
+                            font=("Arial", 16, "bold"))
+    header_label.pack(pady=(10, 5))
+
     # Create main area with vertical scroll
     main_area = scrolledtext.ScrolledText(root, wrap=tk.WORD)
     main_area.pack(side="left", fill="both", expand=True)
@@ -181,6 +187,8 @@ def create_gui():
         main_area.insert(tk.END, f"New Location: {new_location}\n")
         # Add a line break between each file entry
         main_area.insert(tk.END, "\n")
+
+    main_area.configure(state="disabled")  # Make the text uneditable
 
     root.mainloop()
 
