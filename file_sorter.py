@@ -55,7 +55,9 @@ def move_files(selected_folders):
         for file in files:
             file_path = os.path.join(folder_path, file)
             if os.path.isfile(file_path):  # Check if it's a file
-                file_info[file] = file_path
+                if file not in file_info:
+                    file_info[file] = []
+                file_info[file].append(file_path)
 
     data[timestamp] = file_info
 
@@ -71,15 +73,15 @@ def move_files(selected_folders):
         folder_path = folder_info["path"]
         extensions = folder_info["ext"]
 
-        for file, file_path in file_info.items():
+        for file, file_paths in file_info.items():
             _, extension = os.path.splitext(file)
             if extension.startswith("."):
                 extension = extension[1:]  # Remove the leading dot
 
-            if extension in extensions:
+            if extension in extensions and folder_path != os.path.dirname(file_paths[0]) and file not in os.listdir(folder_path):
                 new_dir = folder_path
                 move_data[file] = {
-                    "prev_dir": os.path.dirname(file_path),
+                    "prev_dir": os.path.dirname(file_paths[0]),
                     "file": file,
                     "new_dir": new_dir
                 }
@@ -104,7 +106,36 @@ def move_files(selected_folders):
         shutil.move(file_path, new_file_path)
 
 
+def update_main_area():
+    global main_area  # Access the global main_area variable
+    main_area.configure(state="normal")  # Enable editing
+    main_area.delete(1.0, tk.END)  # Clear existing content
+
+    move_logs = {}
+    if os.path.exists("move.json"):
+        with open("move.json", "r") as move_file:
+            move_logs = json.load(move_file)
+
+    latest_move_entry = move_logs.get(max(move_logs.keys()), {})
+
+    for file, file_info in latest_move_entry.items():
+        prev_dir = file_info["prev_dir"]
+        new_dir = file_info["new_dir"]
+
+        prev_location = os.path.join(prev_dir, file)
+        new_location = os.path.join(new_dir, file)
+
+        main_area.insert(tk.END, f"Previous Location: {prev_location}\n")
+        main_area.insert(tk.END, f"File: {file}\n")
+        main_area.insert(tk.END, f"New Location: {new_location}\n")
+        # Add a line break between each file entry
+        main_area.insert(tk.END, "\n")
+
+    main_area.configure(state="disabled")  # Disable editing
+
+
 def create_gui():
+    global main_area  # Declare main_area as a global variable
     root = tk.Tk()
     root.geometry("600x400")
     root.title("Jexi")
@@ -113,8 +144,11 @@ def create_gui():
     # Create menubar
     menubar = tk.Menu(root)
     actions_menu = tk.Menu(menubar, tearoff=0)
-    actions_menu.add_command(label="Move Files", command=lambda: move_files(
-        get_selected_folders(downloads_var, documents_var, pictures_var, music_var, videos_var)))
+    actions_menu.add_command(label="Move Files", command=lambda: [
+        move_files(get_selected_folders(downloads_var, documents_var,
+                   pictures_var, music_var, videos_var)),
+        update_main_area()
+    ])
     menubar.add_cascade(label="Actions", menu=actions_menu)
     menubar.add_command(label="Logs")
     menubar.add_command(label="Help")
@@ -162,31 +196,13 @@ def create_gui():
     main_area = scrolledtext.ScrolledText(root, wrap=tk.WORD)
     main_area.pack(side="left", fill="both", expand=True)
 
-    sort_button = tk.Button(sidebar_frame, text="Sort", command=lambda: move_files(
-        get_selected_folders(downloads_var, documents_var, pictures_var, music_var, videos_var)))
+    sort_button = tk.Button(sidebar_frame, text="Sort", command=lambda: [
+        move_files(get_selected_folders(downloads_var, documents_var,
+                   pictures_var, music_var, videos_var)),
+        update_main_area()
+    ])
 
     sort_button.grid(row=5, sticky="nsew", pady=(10, 0), padx=10)
-
-    # Print latest move entry in main area
-    move_logs = {}
-    if os.path.exists("move.json"):
-        with open("move.json", "r") as move_file:
-            move_logs = json.load(move_file)
-
-    latest_move_entry = move_logs.get(max(move_logs.keys()), {})
-
-    for file, file_info in latest_move_entry.items():
-        prev_dir = file_info["prev_dir"]
-        new_dir = file_info["new_dir"]
-
-        prev_location = os.path.join(prev_dir, file)
-        new_location = os.path.join(new_dir, file)
-
-        main_area.insert(tk.END, f"Previous Location: {prev_location}\n")
-        main_area.insert(tk.END, f"File: {file}\n")
-        main_area.insert(tk.END, f"New Location: {new_location}\n")
-        # Add a line break between each file entry
-        main_area.insert(tk.END, "\n")
 
     main_area.configure(state="disabled")  # Make the text uneditable
 
