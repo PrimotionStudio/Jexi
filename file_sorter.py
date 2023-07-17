@@ -4,6 +4,7 @@ import os
 import json
 import shutil
 from datetime import datetime
+import itertools
 
 
 def get_folder_config():
@@ -14,6 +15,10 @@ def get_folder_config():
             folder_config = json.load(json_file)
     else:
         folder_config = {
+            "Desktop": {
+                "ext": [],
+                "path": os.path.join(os.path.expanduser("~"), "Desktop")
+            },
             "Pictures": {
                 "ext": ["jpg", "png", "jpeg"],
                 "path": os.path.join(os.path.expanduser("~"), "Pictures")
@@ -78,12 +83,25 @@ def move_files(selected_folders):
             if extension.startswith("."):
                 extension = extension[1:]  # Remove the leading dot
 
-            if extension in extensions and folder_path != os.path.dirname(file_paths[0]) and file not in os.listdir(folder_path):
+            if (
+                extension in extensions
+                and folder_path != os.path.dirname(file_paths[0])
+            ):
                 new_dir = folder_path
+                new_file = file
+                i = 1
+
+                # Check for duplicates in the destination folder
+                while new_file in os.listdir(new_dir):
+                    file_name, file_ext = os.path.splitext(file)
+                    new_file = f"{file_name} cpy{i}{file_ext}"
+                    i += 1
+
                 move_data[file] = {
-                    "prev_dir": os.path.dirname(file_paths[0]),
+                    "prev_dir": os.path.dirname(file_paths[0]).replace("/", "\\"),
                     "file": file,
-                    "new_dir": new_dir
+                    "new_dir": new_dir.replace("/", "\\"),
+                    "new_file": new_file,
                 }
 
     move_logs = {}
@@ -96,14 +114,18 @@ def move_files(selected_folders):
     with open("move.json", "w") as move_file:
         json.dump(move_logs, move_file, indent=4)
 
-    # Move files based on move.json
+    # Move or copy files based on move.json
     latest_move_data = move_logs.get(timestamp, {})
     for file, file_info in latest_move_data.items():
         prev_dir = file_info["prev_dir"]
         new_dir = file_info["new_dir"]
         file_path = os.path.join(prev_dir, file)
-        new_file_path = os.path.join(new_dir, file)
-        shutil.move(file_path, new_file_path)
+        new_file_path = os.path.join(new_dir, file_info["new_file"])
+
+        if file_path != new_file_path:
+            shutil.move(file_path, new_file_path)
+
+    update_main_area()
 
 
 def update_main_area():
@@ -145,8 +167,8 @@ def create_gui():
     menubar = tk.Menu(root)
     actions_menu = tk.Menu(menubar, tearoff=0)
     actions_menu.add_command(label="Move Files", command=lambda: [
-        move_files(get_selected_folders(downloads_var, documents_var,
-                   pictures_var, music_var, videos_var)),
+        move_files(get_selected_folders(desktop_var, downloads_var,
+                   documents_var, pictures_var, music_var, videos_var)),
         update_main_area()
     ])
     menubar.add_cascade(label="Actions", menu=actions_menu)
@@ -158,30 +180,35 @@ def create_gui():
     sidebar_frame = tk.Frame(root, width=200, bg="white")
     sidebar_frame.pack(side="left", fill="y")
 
+    desktop_var = tk.BooleanVar(value=True)
+    desktop_checkbox = tk.Checkbutton(
+        sidebar_frame, text="Desktop", variable=desktop_var, bg="white")
+    desktop_checkbox.grid(row=0, sticky="w")
+
     downloads_var = tk.BooleanVar(value=True)
     downloads_checkbox = tk.Checkbutton(
         sidebar_frame, text="Downloads", variable=downloads_var, bg="white")
-    downloads_checkbox.grid(row=0, sticky="w")
+    downloads_checkbox.grid(row=1, sticky="w")
 
     documents_var = tk.BooleanVar()
     documents_checkbox = tk.Checkbutton(
         sidebar_frame, text="Documents", variable=documents_var, bg="white")
-    documents_checkbox.grid(row=1, sticky="w")
+    documents_checkbox.grid(row=2, sticky="w")
 
     pictures_var = tk.BooleanVar()
     pictures_checkbox = tk.Checkbutton(
         sidebar_frame, text="Pictures", variable=pictures_var, bg="white")
-    pictures_checkbox.grid(row=2, sticky="w")
+    pictures_checkbox.grid(row=3, sticky="w")
 
     music_var = tk.BooleanVar()
     music_checkbox = tk.Checkbutton(
         sidebar_frame, text="Music", variable=music_var, bg="white")
-    music_checkbox.grid(row=3, sticky="w")
+    music_checkbox.grid(row=4, sticky="w")
 
     videos_var = tk.BooleanVar()
     videos_checkbox = tk.Checkbutton(
         sidebar_frame, text="Videos", variable=videos_var, bg="white")
-    videos_checkbox.grid(row=4, sticky="w")
+    videos_checkbox.grid(row=5, sticky="w")
 
     # Create separator
     separator = tk.Frame(root, width=1, bg="gray")
@@ -197,12 +224,12 @@ def create_gui():
     main_area.pack(side="left", fill="both", expand=True)
 
     sort_button = tk.Button(sidebar_frame, text="Sort", command=lambda: [
-        move_files(get_selected_folders(downloads_var, documents_var,
-                   pictures_var, music_var, videos_var)),
+        move_files(get_selected_folders(desktop_var, downloads_var,
+                   documents_var, pictures_var, music_var, videos_var)),
         update_main_area()
     ])
 
-    sort_button.grid(row=5, sticky="nsew", pady=(10, 0), padx=10)
+    sort_button.grid(row=6, sticky="nsew", pady=(10, 0), padx=10)
 
     main_area.configure(state="disabled")  # Make the text uneditable
 
@@ -210,7 +237,8 @@ def create_gui():
 
 
 def get_selected_folders(*vars):
-    folders = ["Downloads", "Documents", "Pictures", "Music", "Videos"]
+    folders = ["Desktop", "Downloads",
+               "Documents", "Pictures", "Music", "Videos"]
     selected_folders = []
     for index, var in enumerate(vars):
         if var.get():
