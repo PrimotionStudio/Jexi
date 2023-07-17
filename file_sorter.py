@@ -94,7 +94,7 @@ def move_files(selected_folders):
                 # Check for duplicates in the destination folder
                 while new_file in os.listdir(new_dir):
                     file_name, file_ext = os.path.splitext(file)
-                    new_file = f"{file_name} cpy{i}{file_ext}"
+                    new_file = f"{file_name} jexi_copy{i}{file_ext}"
                     i += 1
 
                 move_data[file] = {
@@ -156,6 +156,24 @@ def update_main_area():
     main_area.configure(state="disabled")  # Disable editing
 
 
+# def create_gui():
+#     global main_area  # Declare main_area as a global variable
+#     root = tk.Tk()
+#     root.geometry("600x400")
+#     root.title("Jexi")
+#     root.resizable(False, False)  # Make the window unresizable
+
+#     # Create menubar
+#     menubar = tk.Menu(root)
+#     actions_menu = tk.Menu(menubar, tearoff=0)
+#     actions_menu.add_command(label="Move Files", command=lambda: [
+#         move_files(get_selected_folders(desktop_var, downloads_var,
+#                    documents_var, pictures_var, music_var, videos_var)),
+#         update_main_area()
+#     ])
+#     menubar.add_cascade(label="Actions", menu=actions_menu)
+#     menubar.add_command(label="Logs")
+#     menubar.add_command(label="Help")
 def create_gui():
     global main_area  # Declare main_area as a global variable
     root = tk.Tk()
@@ -165,15 +183,66 @@ def create_gui():
 
     # Create menubar
     menubar = tk.Menu(root)
+
+    # Actions menu
     actions_menu = tk.Menu(menubar, tearoff=0)
     actions_menu.add_command(label="Move Files", command=lambda: [
         move_files(get_selected_folders(desktop_var, downloads_var,
-                   documents_var, pictures_var, music_var, videos_var)),
+                                        documents_var, pictures_var, music_var, videos_var)),
         update_main_area()
     ])
     menubar.add_cascade(label="Actions", menu=actions_menu)
-    menubar.add_command(label="Logs")
-    menubar.add_command(label="Help")
+
+    # View Logs menu
+    def view_logs():
+        logs_window = tk.Toplevel(root)
+        logs_window.title("View Logs")
+        logs_window.geometry("400x300")
+        logs_text = tk.Text(logs_window, wrap=tk.WORD)
+        logs_text.pack(fill="both", expand=True)
+
+        # Read and display logs from move.json
+        if os.path.exists("move.json"):
+            with open("move.json", "r") as move_file:
+                move_logs = json.load(move_file)
+                for timestamp, move_data in move_logs.items():
+                    logs_text.insert(tk.END, f"Timestamp: {timestamp}\n")
+                    for file, file_info in move_data.items():
+                        prev_dir = file_info["prev_dir"]
+                        new_dir = file_info["new_dir"]
+                        prev_location = os.path.join(prev_dir, file)
+                        new_location = os.path.join(
+                            new_dir, file_info["new_file"])
+                        logs_text.insert(
+                            tk.END, f"Previous Location: {prev_location}\n")
+                        logs_text.insert(tk.END, f"File: {file}\n")
+                        logs_text.insert(
+                            tk.END, f"New Location: {new_location}\n\n")
+                    logs_text.insert(tk.END, "-" * 50 + "\n\n")
+        else:
+            logs_text.insert(tk.END, "No logs found.\n")
+
+        logs_text.configure(state="disabled")
+
+    menubar.add_command(label="View Logs", command=view_logs)
+
+    # Donate menu
+    def donate():
+        donate_window = tk.Toplevel(root)
+        donate_window.title("Donate")
+        donate_window.geometry("300x200")
+        donate_label = tk.Label(
+            donate_window, text="Thank you for considering a donation!")
+        donate_label.pack(pady=50)
+
+    menubar.add_command(label="Donate", command=donate)
+
+    # Extra menu
+    extra_menu = tk.Menu(menubar, tearoff=0)
+    extra_menu.add_command(label="Extra Menu Item 1")
+    extra_menu.add_command(label="Extra Menu Item 2")
+    menubar.add_cascade(label="Extra", menu=extra_menu)
+
     root.config(menu=menubar)
 
     # Create sidebar
