@@ -371,11 +371,8 @@ def create_gui():
     extra_menu = tk.Menu(menubar, tearoff=0)
 
     def view_help():
-        help_window = tk.Toplevel(root)
-        help_window.title("Help")
-        help_window.geometry("400x300")
-        help_label = tk.Label(help_window, text="This is the help page.")
-        help_label.pack(pady=50)
+        webbrowser.open(
+            "https://github.com/PrimotionStudio/Jexi#jexi---file-organizer")
 
     extra_menu.add_command(label="View Help", command=view_help)
 
