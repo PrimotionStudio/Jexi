@@ -5,6 +5,8 @@ import json
 import shutil
 from datetime import datetime
 import itertools
+import webbrowser
+from PIL import Image, ImageTk
 
 
 def get_folder_config():
@@ -133,10 +135,13 @@ def update_main_area():
     main_area.configure(state="normal")  # Enable editing
     main_area.delete(1.0, tk.END)  # Clear existing content
 
+    if not os.path.exists("move.json"):
+        main_area.configure(state="disabled")  # Disable editing
+        return  # No logs to display, return early
+
     move_logs = {}
-    if os.path.exists("move.json"):
-        with open("move.json", "r") as move_file:
-            move_logs = json.load(move_file)
+    with open("move.json", "r") as move_file:
+        move_logs = json.load(move_file)
 
     latest_move_entry = move_logs.get(max(move_logs.keys()), {})
 
@@ -156,24 +161,6 @@ def update_main_area():
     main_area.configure(state="disabled")  # Disable editing
 
 
-# def create_gui():
-#     global main_area  # Declare main_area as a global variable
-#     root = tk.Tk()
-#     root.geometry("600x400")
-#     root.title("Jexi")
-#     root.resizable(False, False)  # Make the window unresizable
-
-#     # Create menubar
-#     menubar = tk.Menu(root)
-#     actions_menu = tk.Menu(menubar, tearoff=0)
-#     actions_menu.add_command(label="Move Files", command=lambda: [
-#         move_files(get_selected_folders(desktop_var, downloads_var,
-#                    documents_var, pictures_var, music_var, videos_var)),
-#         update_main_area()
-#     ])
-#     menubar.add_cascade(label="Actions", menu=actions_menu)
-#     menubar.add_command(label="Logs")
-#     menubar.add_command(label="Help")
 def create_gui():
     global main_area  # Declare main_area as a global variable
     root = tk.Tk()
@@ -186,47 +173,189 @@ def create_gui():
 
     # Actions menu
     actions_menu = tk.Menu(menubar, tearoff=0)
-    actions_menu.add_command(label="Move Files", command=lambda: [
-        move_files(get_selected_folders(desktop_var, downloads_var,
-                                        documents_var, pictures_var, music_var, videos_var)),
-        update_main_area()
-    ])
+
+    def clear_logs():
+        main_area.configure(state="normal")
+        main_area.delete(1.0, tk.END)
+        main_area.configure(state="disabled")
+
+    actions_menu.add_command(label="Clear", command=clear_logs)
+
+    def undo_move():
+        move_logs = {}
+        if os.path.exists("move.json"):
+            with open("move.json", "r") as move_file:
+                move_logs = json.load(move_file)
+
+        if move_logs:
+            latest_timestamp = max(move_logs.keys())
+
+            latest_move_data = move_logs[latest_timestamp]
+            # Create a backup of the latest move data
+            backup_move_data = latest_move_data.copy()
+
+            for file, file_info in latest_move_data.items():
+                prev_dir = file_info["prev_dir"]
+                new_dir = file_info["new_dir"]
+                file_path = os.path.join(new_dir, file_info["new_file"])
+                prev_file_path = os.path.join(prev_dir, file)
+                if os.path.exists(file_path):
+                    shutil.move(file_path, prev_file_path)
+
+            # Restore the backup entry to move_logs
+            move_logs[latest_timestamp] = backup_move_data
+
+            with open("move.json", "w") as move_file:
+                json.dump(move_logs, move_file, indent=4)
+            update_main_area()
+
+    actions_menu.add_command(label="Undo Move", command=undo_move)
+
+    def delete_logs():
+        if os.path.exists("move.json"):
+            update_main_area()  # Update the main area first to avoid ValueError
+            os.remove("move.json")
+        else:
+            clear_logs()  # Clear the main area directly if there are no logs # Check if move_logs is empty after deleting move.json
+        if not os.path.exists("move.json"):
+            update_main_area()  # Update the main area to show no logs
+        if os.path.exists("files.json"):
+            update_main_area()  # Update the main area first to avoid ValueError
+            os.remove("files.json")
+        else:
+            clear_logs()  # Clear the main area directly if there are no logs # Check if move_logs is empty after deleting move.json
+        if not os.path.exists("files.json"):
+            update_main_area()  # Update the main area to show no logs
+
+    actions_menu.add_command(label="Delete Logs", command=delete_logs)
+
+    actions_menu.add_separator()
+
+    actions_menu.add_command(label="Exit", command=root.quit)
+
     menubar.add_cascade(label="Actions", menu=actions_menu)
 
-    # View Logs menu
+    menubar.add_command(label="View Logs", command=lambda: [
+        update_main_area(),
+        view_logs()
+    ])
+
     def view_logs():
         logs_window = tk.Toplevel(root)
         logs_window.title("View Logs")
         logs_window.geometry("400x300")
-        logs_text = tk.Text(logs_window, wrap=tk.WORD)
-        logs_text.pack(fill="both", expand=True)
 
-        # Read and display logs from move.json
+        def show_selected_logs():
+            selected_date = logs_listbox.get(tk.ACTIVE)
+            logs_window.destroy()  # Close the popup window
+
+            # Read and display logs from move.json for the selected date
+            if os.path.exists("move.json"):
+                with open("move.json", "r") as move_file:
+                    move_logs = json.load(move_file)
+                    sorted_move_logs = sorted(move_logs.items(
+                    ), reverse=True, key=lambda x: datetime.strptime(x[0], "%Y-%m-%d %H:%M:%S"))
+                    found_logs = False  # Flag to check if any logs were found for the selected date
+                    for timestamp, move_data in sorted_move_logs:
+                        formatted_date = datetime.strptime(
+                            timestamp, "%Y-%m-%d %H:%M:%S").strftime("%I:%M:%S %p - %A, %B %Y")
+                        if formatted_date == selected_date:
+                            found_logs = True
+                            # Display the selected logs
+                            display_logs(move_data)
+                            break  # Stop iterating once the logs for the selected date are found
+                    if not found_logs:
+                        main_area.configure(state="normal")
+                        main_area.delete(1.0, tk.END)
+                        main_area.insert(
+                            tk.END, "No logs found for selected date.\n")
+                        main_area.configure(state="disabled")
+            else:
+                main_area.configure(state="normal")
+                main_area.delete(1.0, tk.END)
+                main_area.insert(tk.END, "No logs found.\n")
+                main_area.configure(state="disabled")
+
+        logs_listbox = tk.Listbox(logs_window, selectmode=tk.SINGLE)
+        logs_listbox.pack(fill="both", expand=True)
+
+        # Read and display dates from move.json
         if os.path.exists("move.json"):
             with open("move.json", "r") as move_file:
                 move_logs = json.load(move_file)
-                for timestamp, move_data in move_logs.items():
-                    logs_text.insert(tk.END, f"Timestamp: {timestamp}\n")
-                    for file, file_info in move_data.items():
-                        prev_dir = file_info["prev_dir"]
-                        new_dir = file_info["new_dir"]
-                        prev_location = os.path.join(prev_dir, file)
-                        new_location = os.path.join(
-                            new_dir, file_info["new_file"])
-                        logs_text.insert(
-                            tk.END, f"Previous Location: {prev_location}\n")
-                        logs_text.insert(tk.END, f"File: {file}\n")
-                        logs_text.insert(
-                            tk.END, f"New Location: {new_location}\n\n")
-                    logs_text.insert(tk.END, "-" * 50 + "\n\n")
+                sorted_dates = sorted(move_logs.keys(), reverse=True)
+                for timestamp in sorted_dates:
+                    formatted_date = datetime.strptime(
+                        timestamp, "%Y-%m-%d %H:%M:%S").strftime("%I:%M:%S %p - %A, %B %d, %Y")
+                    logs_listbox.insert(tk.END, formatted_date)
         else:
-            logs_text.insert(tk.END, "No logs found.\n")
+            logs_listbox.insert(tk.END, "No logs found.")
 
-        logs_text.configure(state="disabled")
+        show_logs_button = tk.Button(
+            logs_window, text="Show Logs", command=show_selected_logs)
+        show_logs_button.pack(pady=10)
 
-    menubar.add_command(label="View Logs", command=view_logs)
+        logs_window.mainloop()
+
+    def list_dates():
+        dates = []
+
+        if os.path.exists("move.json"):
+            with open("move.json", "r") as move_file:
+                move_logs = json.load(move_file)
+                dates = list(reversed(move_logs.keys()))
+
+        # Create a new Toplevel window to display the list of dates
+        date_window = tk.Toplevel()
+        date_window.title("Log Dates")
+        date_window.geometry("300x200")
+
+        dates_listbox = tk.Listbox(date_window, selectmode=tk.SINGLE)
+        dates_listbox.pack(fill=tk.BOTH, expand=True)
+
+        for date in dates:
+            datetime_obj = datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+            formatted_date = datetime_obj.strftime(
+                "%I:%M:%S %p - %A, %B %d, %Y")
+            dates_listbox.insert(tk.END, formatted_date)
+
+        def view_logs():
+            selected_index = dates_listbox.curselection()
+            if selected_index:
+                selected_date = dates[selected_index[0]]
+                selected_logs = move_logs[selected_date]
+                display_logs(selected_logs)
+
+        view_button = tk.Button(
+            date_window, text="View Logs", command=view_logs)
+        view_button.pack(pady=10)
+
+        date_window.mainloop()
+
+    def display_logs(logs):
+        global main_area
+        main_area.configure(state="normal")
+        main_area.delete(1.0, tk.END)
+
+        # for file, file_info in sorted(logs.items(), reverse=True):
+        sorted_logs = sorted(logs.items(), reverse=True, key=lambda x: datetime.strptime(
+            x[0], "%Y-%m-%d %H:%M:%S"))  # Sort logs based on datetime
+        for file, file_info in sorted_logs:
+            prev_dir = file_info["prev_dir"]
+            new_dir = file_info["new_dir"]
+
+            prev_location = os.path.join(prev_dir, file)
+            new_location = os.path.join(new_dir, file)
+
+            main_area.insert(tk.END, f"Previous Location: {prev_location}\n")
+            main_area.insert(tk.END, f"File: {file}\n")
+            main_area.insert(tk.END, f"New Location: {new_location}\n")
+            main_area.insert(tk.END, "\n")
+
+        main_area.configure(state="disabled")
 
     # Donate menu
+
     def donate():
         donate_window = tk.Toplevel(root)
         donate_window.title("Donate")
@@ -234,13 +363,117 @@ def create_gui():
         donate_label = tk.Label(
             donate_window, text="Thank you for considering a donation!")
         donate_label.pack(pady=50)
+        webbrowser.open("https://theprimotionstudio.wordpress.com/")
 
     menubar.add_command(label="Donate", command=donate)
 
     # Extra menu
     extra_menu = tk.Menu(menubar, tearoff=0)
-    extra_menu.add_command(label="Extra Menu Item 1")
-    extra_menu.add_command(label="Extra Menu Item 2")
+
+    def view_help():
+        help_window = tk.Toplevel(root)
+        help_window.title("Help")
+        help_window.geometry("400x300")
+        help_label = tk.Label(help_window, text="This is the help page.")
+        help_label.pack(pady=50)
+
+    extra_menu.add_command(label="View Help", command=view_help)
+
+    def about_app():
+        about_window = tk.Toplevel(root)
+        about_window.title("About Jexi")
+        about_window.geometry("400x400")
+        about_window.resizable(False, False)
+
+        logo_path = "primotion-studio.png"  # Replace with the actual image path
+        logo_image = Image.open(logo_path)
+        logo_image = logo_image.resize((100, 100))  # Adjust the size as needed
+        logo_photo = ImageTk.PhotoImage(logo_image)
+
+        # Create the header label
+        header_label = tk.Label(
+            about_window,
+            text="Jexi - File Organizer",
+            image=logo_photo,
+            compound="left",
+            font=("Arial", 15, "bold")
+        )
+        header_label.pack(pady=(10, 5))
+        caption_label = tk.Label(
+            about_window,
+            text="by Primotion Studio",
+            font=("Arial", 10)
+        )
+        caption_label.pack()
+        about_text = tk.Text(about_window, wrap=tk.WORD)
+        about_text.pack(fill="both", expand=True)
+        about_text.configure(state="normal")
+
+        about_text.insert(
+            tk.END,
+            "Jexi is a powerful file organizer application that helps you manage and sort your files effortlessly.\n\n"
+        )
+        about_text.insert(tk.END, "Features:\n")
+        about_text.insert(
+            tk.END,
+            "  - Automatic sorting of files based on predefined folder configurations\n"
+        )
+        about_text.insert(
+            tk.END,
+            "  - Ability to customize folder configurations to suit your needs\n"
+        )
+        about_text.insert(
+            tk.END,
+            "  - Undo move functionality to revert file operations\n"
+        )
+        about_text.insert(tk.END, "  - View and manage log history\n")
+        about_text.insert(
+            tk.END,
+            "  - Donate to support the development of Jexi\n"
+        )
+
+        about_text.configure(state="disabled")
+
+        # Keep a reference to the logo_photo to prevent it from being garbage collected
+        about_window.logo_photo = logo_photo
+
+    extra_menu.add_command(label="About Jexi", command=about_app)
+
+    def show_credits():
+        credits_window = tk.Toplevel(root)
+        credits_window.title("Credits")
+        credits_window.geometry("400x200")
+        credits_window.resizable(False, False)
+
+        logo_path = "primotion-studio.png"  # Replace with the actual image path
+        logo_image = Image.open(logo_path)
+        logo_image = logo_image.resize((70, 70))  # Adjust the size as needed
+        logo_photo = ImageTk.PhotoImage(logo_image)
+
+        # Create the header label
+        header_label = tk.Label(
+            credits_window,
+            text="Primotion Studio",
+            image=logo_photo,
+            compound="left",
+            font=("Arial", 15, "bold")
+        )
+        header_label.pack(pady=(10, 5))
+
+        # Create the credits label
+        credits_text = "CEO and Chief Software Engineer: Prime Okanlawon"
+        credits_label = tk.Label(
+            credits_window,
+            text=credits_text,
+            font=("Arial", 10)
+        )
+        credits_label.pack(pady=(10, 5))
+
+        # Keep a reference to the logo_photo to prevent it from being garbage collected
+        credits_window.logo_photo = logo_photo
+
+    extra_menu.add_command(label="Credits", command=show_credits)
+
     menubar.add_cascade(label="Extra", menu=extra_menu)
 
     root.config(menu=menubar)
